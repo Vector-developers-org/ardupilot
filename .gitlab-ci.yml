@@ -1,0 +1,64 @@
+image: ubuntu:24.04
+
+stages:
+  - build
+
+variables:
+  GIT_CLONE_PATH: "/builds/software/ardupilot"
+  # Ensure submodules are cloned recursively
+  #GIT_SUBMODULE_STRATEGY: recursive
+  # Optional: fetch latest commits from submodule branches
+  #GIT_SUBMODULE_UPDATE_FLAGS: "--init --recursive --force"
+  #GIT_SUBMODULE_AUTHORIZATION: $CI_JOB_TOKEN 
+
+build:
+  stage: build
+    #variables: 
+    #GIT_SUBMODULE_STRATEGY: recursive
+  before_script:
+    - apt update ; apt install -y git docker.io pwgen
+      #- mv /builds/software/ardupilot-vector-fork /builds/software/ardupilot
+    - git config --global --add safe.directory /builds/software/ardupilot
+    - mkdir -p ~/.ssh
+    - ssh-keygen -b 2048 -t rsa -f /root/.ssh/id_rsa -q -N ""
+    - pwd ; ls -lah /builds ; ls -lah /builds/software ; ls -lah /builds/software/ardupilot ; cd /builds/software/ardupilot ; git log -n1 ; git remote -v 
+      #  - ls -lah /root/.ssh/
+      #- git config -f modules/CrashDebug/.gitmodules submodule.mri.url https://github.com/ardupilot/mri.git
+      #- git config -f modules/CrashDebug/CrashCatcher/.gitmodules submodule.CppUTest.url https://github.com/CppUTest/CppUTest.git
+    - cd /builds/software/ardupilot ; git submodule sync --recursive
+      #- cd /builds/software/ardupilot ; git config --global url."https://github.com/".insteadOf git://github.com/
+      #- cd /builds/software/ardupilot ; git submodule update --init --recursive
+      #- cd /builds/software/ardupilot ; git submodule update --init --recursive --jobs 4 --force --depth 1 -- modules/ChibiOS modules/DroneCAN modules/Micro-CDR modules/Micro-XRCE-DDS-Client modules/gbenchmark modules/gsoap modules/gtest modules/littlefs modules/lwip modules/mavlink modules/waf
+    - cd /builds/software/ardupilot ; git submodule update --init --recursive --jobs 4 --force -- modules/ChibiOS modules/DroneCAN modules/Micro-CDR modules/Micro-XRCE-DDS-Client modules/gbenchmark modules/gsoap modules/gtest modules/littlefs modules/lwip modules/mavlink modules/waf
+  script:
+    - apt update && apt install -y git 
+     # Build the ArduPilot Docker image
+    - docker build -t ardupilot-build-image -f Dockerfile .
+      #- echo "PATH (${CI_PROJECT_PATH})"
+      #- echo "pwd $(pwd)"
+      #- echo "ls $(ls -lah /builds/software/ardupilot)"
+      #- chmod -R a+r /builds/software/ardupilot
+      #- chown -R root:root /builds/software/ardupilot
+      #- mkdir /tmp/ardupilot
+      #- cp -a /builds/software/ardupilot /tmp/
+      #- echo "blah blah blah" > /tmp/ardupilot/blah
+      #- chown -R 1000:1000 /tmp/ardupilot
+      #- chown -R 1000:1000 /builds
+      #- echo "ls $(ls -lah /tmp)"
+      #- echo "ls $(ls -lah /tmp/ardupilot)"
+    # Run the container and build a specific board (e.g., Pixhawk Cube) in release mode
+    #- docker -D -ldebug run --rm -v /builds/software/ardupilot:/tmp/ardupilot:Z -w /ardupilot ardupilot-cw /bin/bash -c "pwd; ls -lah; ls -lah /; ls -lah /ardupilot; ls -lah /tmp; ls -lah /tmp/ardupilot; git --version; git submodule update --init --recursive && ./waf configure --board Pixhawk1 --debug && ./waf copter"
+    #- docker -D -ldebug run -u 0 --rm -v /bin:/tmp/ardupilot -w /ardupilot ardupilot-cw sudo /bin/bash -c "whoami ; cat /etc/passwd; sudo chown -R ardupilot:ardupilot /tmp/ardupilot ; ls -lah /; ls -lah /tmp; sudo find /tmp/ardupilot" 
+    - pwgen -s 6 1 >> /tmp/rand
+    - docker run -dit --name ardupilot-build-$(cat /tmp/rand) ardupilot-build-image /bin/bash
+    - docker cp -a /builds ardupilot-build-$(cat /tmp/rand):/
+    - docker exec -i ardupilot-build-$(cat /tmp/rand) /bin/bash -c "source /home/ardupilot/.ardupilot_env; cd /builds/software/ardupilot ; ./waf configure --board Pixhawk1 && ./waf copter"
+    - docker cp -a ardupilot-build-$(cat /tmp/rand):/builds/software/ardupilot/build ./VECTOR_BUILD_OUTPUT
+    - ls -lah ./VECTOR_BUILD_OUTPUT
+  artifacts:
+    paths:
+      - ./VECTOR_BUILD_OUTPUT/Pixhawk1/bin
+        # after_script:
+    #- docker container stop ardupilot-build-$(cat /tmp/rand)
+    #- docker container rm ardupilot-build-$(cat /tmp/rand)
+
